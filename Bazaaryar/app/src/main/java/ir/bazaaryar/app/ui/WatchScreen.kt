@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,7 +33,8 @@ import ir.bazaaryar.app.data.EconEvent
 @Composable
 fun WatchScreen(
     coins: List<Coin>, watch: Set<String>, events: List<EconEvent>, alarms: Set<String>, now: Long,
-    onToggleCoin: (String) -> Unit, onToggleAlarm: (String) -> Unit, go: (Int) -> Unit,
+    toman: Boolean, rate: Double?,
+    onToggleCoin: (String) -> Unit, onToggleAlarm: (String) -> Unit, onOpen: (String) -> Unit, go: (Int) -> Unit,
 ) {
     val mine = coins.filter { it.id in watch }
     val myEvents = events.filter { it.id in alarms && it.at > now }
@@ -42,7 +44,9 @@ fun WatchScreen(
         mine.chunked(2).forEach { pair ->
             item(key = pair.joinToString { it.id }) {
                 Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    pair.forEach { c -> WatchCard(c, Modifier.weight(1f)) { onToggleCoin(c.id) } }
+                    pair.forEach { c ->
+                        WatchCard(c, toman, rate, Modifier.weight(1f), onRemove = { onToggleCoin(c.id) }, onOpen = { onOpen(c.id) })
+                    }
                     if (pair.size == 1) Box(Modifier.weight(1f))
                 }
             }
@@ -78,16 +82,17 @@ private fun Empty(t: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun WatchCard(c: Coin, modifier: Modifier, onRemove: () -> Unit) {
-    val up = c.change24h >= 0
-    val tone = if (up) C.Up else C.Crimson
-    Column(modifier.clip(RoundedCornerShape(16.dp)).background(C.Card).padding(12.dp)) {
+private fun WatchCard(c: Coin, toman: Boolean, rate: Double?, modifier: Modifier, onRemove: () -> Unit, onOpen: () -> Unit) {
+    val tone = if (c.change24h >= 0) C.Up else C.Crimson
+    val price = coinPrice(c, toman, rate)
+    Column(modifier.clip(RoundedCornerShape(16.dp)).background(C.Card).clickable(onClick = onOpen).padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(c.symbol, color = C.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = onRemove, modifier = Modifier.height(24.dp)) { Icon(Icons.Filled.Close, "حذف", tint = Color(0xFF9DB3BD)) }
+            IconButton(onClick = onRemove, modifier = Modifier.size(24.dp)) { Icon(Icons.Filled.Close, "حذف", tint = Color(0xFF9DB3BD)) }
         }
-        Text("$" + fmtPrice(c.price), color = C.Ink, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+        if (c.isToman) Text("تتر / تومان", color = C.Muted, fontSize = 12.sp)
+        FlashText(price, c.price, C.Ink, if (price.length > 12) 16.sp else 20.sp, Modifier.padding(top = 6.dp))
         Text(fmtPct(c.change24h), color = tone, fontSize = 14.sp)
-        Sparkline(c.spark, tone, Modifier.fillMaxWidth().height(34.dp).padding(top = 6.dp))
+        Sparkline(c.spark.takeLast(if (c.isToman) 120 else 48), tone, Modifier.fillMaxWidth().height(34.dp).padding(top = 6.dp))
     }
 }
