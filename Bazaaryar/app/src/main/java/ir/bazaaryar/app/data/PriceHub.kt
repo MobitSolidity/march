@@ -2,6 +2,8 @@ package ir.bazaaryar.app.data
 
 import android.content.Context
 import ir.bazaaryar.app.notify.PriceAlerts
+import ir.bazaaryar.app.ui.L
+import ir.bazaaryar.app.ui.tr
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -96,6 +98,13 @@ object PriceHub {
             launch { prefs.alertSettings.collect { settings = it } }
             launch { prefs.rules.collect { rules = it } }
             launch { prefs.watch.collect { watch = it } }
+            // Background-only runs (service after reboot) still need the user's language for alert text.
+            launch {
+                prefs.look.collect {
+                    L.lang = it.lang
+                    synchronized(this@PriceHub) { dirty = true }
+                }
+            }
             launch { geckoLoop() }
             launch { overviewLoop() }
             launch { iranLoop() }
@@ -127,7 +136,7 @@ object PriceHub {
                 throw e
             } catch (e: Exception) {
                 synchronized(this) {
-                    error = e.message ?: "خطای شبکه"
+                    error = e.message ?: tr("خطای شبکه", "Network error")
                     dirty = true
                 }
                 if ((e.cause as? Net.HttpError)?.code == 429) wait = GECKO_429
@@ -294,7 +303,7 @@ object PriceHub {
         id = USDT_IRT_ID,
         rank = 0,
         symbol = "USDT",
-        name = "تتر به تومان · ${u.source}",
+        name = tr("تتر به تومان", "USDT in Toman") + " · " + u.source,
         price = u.toman,
         change24h = u.change24h,
         marketCap = 0.0,
