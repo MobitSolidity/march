@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Bazaaryar" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#004759</item>
+        <item name="android:navigationBarColor">#F8FBFC</item>
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>
