@@ -10,6 +10,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import ir.bazaaryar.app.ui.Lang
+import ir.bazaaryar.app.ui.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
@@ -26,10 +28,16 @@ private val A_DIR = stringPreferencesKey("alert_dir")
 private val A_COOLDOWN = intPreferencesKey("alert_cooldown")
 private val A_BG = booleanPreferencesKey("alert_bg")
 private val A_USDT = booleanPreferencesKey("alert_usdt")
+private val A_RING = stringPreferencesKey("alert_ring")
 private val NAME = stringPreferencesKey("user_name")
 private val RULES = stringPreferencesKey("coin_rules")
+private val THEME = stringPreferencesKey("theme")
+private val LANG = stringPreferencesKey("lang")
 
 private val DEFAULT_WATCH = setOf("bitcoin", "ethereum", "solana", "ripple", USDT_IRT_ID)
+
+/** Appearance: theme mode and app language. */
+data class Look(val theme: ThemeMode = ThemeMode.SYSTEM, val lang: Lang = Lang.FA)
 
 private inline fun <reified T : Enum<T>> enumOr(name: String?, fallback: T): T =
     enumValues<T>().firstOrNull { it.name == name } ?: fallback
@@ -44,6 +52,7 @@ private fun readSettings(p: Preferences) = AlertSettings(
     background = p[A_BG] ?: true,
     includeUsdt = p[A_USDT] ?: true,
     name = p[NAME] ?: "",
+    ring = enumOr(p[A_RING], RingMode.ALL),
 )
 
 private fun MutablePreferences.write(s: AlertSettings) {
@@ -56,6 +65,7 @@ private fun MutablePreferences.write(s: AlertSettings) {
     this[A_BG] = s.background
     this[A_USDT] = s.includeUsdt
     this[NAME] = s.name
+    this[A_RING] = s.ring.name
 }
 
 private fun JSONObject.optNum(k: String): Double? =
@@ -95,6 +105,9 @@ class Prefs(private val context: Context) {
     val toman: Flow<Boolean> = context.store.data.map { it[TOMAN] ?: false }
     val alertSettings: Flow<AlertSettings> = context.store.data.map { readSettings(it) }
     val rules: Flow<Map<String, CoinRule>> = context.store.data.map { decodeRules(it[RULES]) }
+    val look: Flow<Look> = context.store.data.map {
+        Look(enumOr(it[THEME], ThemeMode.SYSTEM), enumOr(it[LANG], Lang.FA))
+    }
 
     suspend fun toggleWatch(id: String) {
         context.store.edit {
@@ -116,6 +129,14 @@ class Prefs(private val context: Context) {
 
     suspend fun setToman(on: Boolean) {
         context.store.edit { it[TOMAN] = on }
+    }
+
+    suspend fun setTheme(mode: ThemeMode) {
+        context.store.edit { it[THEME] = mode.name }
+    }
+
+    suspend fun setLang(lang: Lang) {
+        context.store.edit { it[LANG] = lang.name }
     }
 
     suspend fun updateSettings(change: (AlertSettings) -> AlertSettings) {

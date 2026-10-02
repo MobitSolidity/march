@@ -1,5 +1,7 @@
 package ir.bazaaryar.app.data
 
+import ir.bazaaryar.app.ui.tr
+
 /** Synthetic coin id for USDT priced in Toman on Iranian exchanges. */
 const val USDT_IRT_ID = "usdt-irt"
 
@@ -45,6 +47,7 @@ data class MarketOverview(
     val capChange24h: Double,
     val btcDominance: Double,
     val fearGreed: Int? = null,
+    /** Raw alternative.me classification ("Extreme Fear" ... "Extreme Greed"), translated in the UI. */
     val fearLabel: String = "",
 )
 
@@ -64,21 +67,52 @@ data class EconEvent(
     val id: String,
     val at: Long,
     val country: String,
+    /** Persian title. */
     val title: String,
     val impact: Int,
     val previous: String = "",
     val forecast: String = "",
-)
+    /** English title. */
+    val en: String = "",
+) {
+    /** Title in the current app language. */
+    val label: String get() = tr(title, en.ifEmpty { title })
+}
 
 // ---- Price alerts ----
 
-enum class AlertWindow(val minutes: Int, val label: String) {
-    M5(5, "۵ دقیقه"), M15(15, "۱۵ دقیقه"), H1(60, "۱ ساعت"), H24(1440, "۲۴ ساعت"),
+enum class AlertWindow(val minutes: Int, private val faL: String, private val enL: String) {
+    M5(5, "۵ دقیقه", "5 min"),
+    M15(15, "۱۵ دقیقه", "15 min"),
+    H1(60, "۱ ساعت", "1 hour"),
+    H24(1440, "۲۴ ساعت", "24 hours");
+
+    val label: String get() = tr(faL, enL)
 }
 
-enum class AlertScope(val label: String) { WATCHLIST("واچ‌لیست من"), ALL("همه‌ی ۲۰۰ ارز") }
+enum class AlertScope(private val faL: String, private val enL: String) {
+    WATCHLIST("واچ‌لیست من", "My watchlist"),
+    ALL("همه‌ی ۲۰۰ ارز", "All 200 coins");
 
-enum class AlertDirection(val label: String) { BOTH("رشد و ریزش"), UP("فقط رشد"), DOWN("فقط ریزش") }
+    val label: String get() = tr(faL, enL)
+}
+
+enum class AlertDirection(private val faL: String, private val enL: String) {
+    BOTH("رشد و ریزش", "Up & down"),
+    UP("فقط رشد", "Up only"),
+    DOWN("فقط ریزش", "Down only");
+
+    val label: String get() = tr(faL, enL)
+}
+
+/** How hard an alert tries to get your attention. */
+enum class RingMode(private val faL: String, private val enL: String) {
+    OFF("فقط اعلان", "Notification only"),
+    TARGETS("زنگ برای قیمت هدف", "Ring on targets"),
+    ALL("زنگ برای همه", "Ring on everything");
+
+    val label: String get() = tr(faL, enL)
+}
 
 data class AlertSettings(
     val enabled: Boolean = true,
@@ -92,6 +126,8 @@ data class AlertSettings(
     val includeUsdt: Boolean = true,
     /** Used to personalise notification text. */
     val name: String = "",
+    /** Ring like an alarm clock (full screen, alarm stream, vibration) instead of a plain notification. */
+    val ring: RingMode = RingMode.ALL,
 )
 
 /** Per-coin overrides: own % threshold and one-shot target prices (USD, or Toman for USDT/IRT). */

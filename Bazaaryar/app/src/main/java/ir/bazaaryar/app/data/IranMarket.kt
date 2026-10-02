@@ -1,5 +1,6 @@
 package ir.bazaaryar.app.data
 
+import ir.bazaaryar.app.ui.tr
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -25,7 +26,7 @@ object IranMarket {
             if (withCoins) (attempt(errors) { nobitexQuotes() } ?: emptyMap()) else emptyMap()
         if (usdt == null && quotes.isEmpty()) {
             val first = errors.firstOrNull()
-            throw IOException(Net.friendly(first, "نوبیتکس/والکس"), first)
+            throw IOException(Net.friendly(first, tr("نوبیتکس/والکس", "Nobitex/Wallex")), first)
         }
         IranSnapshot(usdt, quotes)
     }
@@ -50,7 +51,7 @@ object IranMarket {
             low = (o.num("dayLow") ?: 0.0) / 10,
             bestBuy = (o.num("bestBuy") ?: 0.0) / 10,
             bestSell = (o.num("bestSell") ?: 0.0) / 10,
-            source = "نوبیتکس",
+            source = tr("نوبیتکس", "Nobitex"),
             at = System.currentTimeMillis(),
         )
     }
@@ -80,7 +81,7 @@ object IranMarket {
             low = st.num("24h_lowPrice") ?: 0.0,
             bestBuy = st.num("bidPrice") ?: 0.0,
             bestSell = st.num("askPrice") ?: 0.0,
-            source = "والکس",
+            source = tr("والکس", "Wallex"),
             at = System.currentTimeMillis(),
         )
     }

@@ -1,5 +1,6 @@
 package ir.bazaaryar.app.data
 
+import ir.bazaaryar.app.ui.tr
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import okhttp3.OkHttpClient
@@ -27,7 +28,7 @@ internal object Net {
     fun get(url: String): String {
         val req = Request.Builder().url(url)
             .header("Accept", "application/json")
-            .header("User-Agent", "Bazaaryar/2.0 (Android)")
+            .header("User-Agent", "Bazaaryar/2.1 (Android)")
             .build()
         return client.newCall(req).execute().use { r ->
             if (!r.isSuccessful) throw HttpError(r.code)
@@ -36,18 +37,18 @@ internal object Net {
     }
 
     fun friendly(e: Throwable?, service: String): String = when (e) {
-        is UnknownHostException -> "اینترنت در دسترس نیست"
-        is SocketTimeoutException -> "زمان اتصال به $service تمام شد"
+        is UnknownHostException -> tr("اینترنت در دسترس نیست", "No internet connection")
+        is SocketTimeoutException -> tr("زمان اتصال به $service تمام شد", "$service timed out")
         is HttpError -> when (e.code) {
-            429 -> "محدودیت درخواست $service؛ کمی صبر کن"
-            403, 451 -> "دسترسی به $service از این IP مسدود است"
-            else -> "خطای سرور $service (${e.code})"
+            429 -> tr("محدودیت درخواست $service؛ کمی صبر کن", "$service rate limit, please wait")
+            403, 451 -> tr("دسترسی به $service از این IP مسدود است", "$service is blocked from this IP")
+            else -> tr("خطای سرور $service (${e.code})", "$service server error (${e.code})")
         }
-        else -> e?.message ?: "خطای شبکه"
+        else -> e?.message ?: tr("خطای شبکه", "Network error")
     }
 }
 
-/** Two attempts with a short pause, then a user-friendly Persian error (original error kept as cause). */
+/** Two attempts with a short pause, then a user-friendly localized error (original error kept as cause). */
 internal suspend fun <T> retrying(service: String, block: () -> T): T {
     var last: Exception? = null
     for (attempt in 0 until 2) {
