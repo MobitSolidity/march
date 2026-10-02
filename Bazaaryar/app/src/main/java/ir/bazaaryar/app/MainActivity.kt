@@ -19,14 +19,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -46,7 +51,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -60,21 +64,24 @@ import ir.bazaaryar.app.ui.AlertsScreen
 import ir.bazaaryar.app.ui.BazaaryarTheme
 import ir.bazaaryar.app.ui.C
 import ir.bazaaryar.app.ui.CoinSheet
+import ir.bazaaryar.app.ui.L
+import ir.bazaaryar.app.ui.Lang
 import ir.bazaaryar.app.ui.MarketScreen
 import ir.bazaaryar.app.ui.NewsScreen
+import ir.bazaaryar.app.ui.ThemeMode
 import ir.bazaaryar.app.ui.WatchScreen
 import ir.bazaaryar.app.ui.faTime
 import ir.bazaaryar.app.ui.rememberNow
+import ir.bazaaryar.app.ui.resolveDark
+import ir.bazaaryar.app.ui.tr
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Android 15+ forces edge-to-edge for targetSdk >= 35: opt in everywhere so layout is identical on all versions.
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(0xFFF8FBFC.toInt(), 0xFFF8FBFC.toInt()),
-        )
+        // Bars are re-styled from Compose below as soon as the theme is known.
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
         // Full-speed live data only while the app is visible; the background service keeps a lighter stream.
         lifecycle.addObserver(object : DefaultLifecycleObserver {
@@ -83,10 +90,24 @@ class MainActivity : ComponentActivity() {
         })
         if (savedInstanceState == null) openFromIntent(intent)
         setContent {
-            BazaaryarTheme {
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            val theme by vm.theme.collectAsStateWithLifecycle()
+            val dark = theme.resolveDark()
+            // Header is always the deep colour (light icons); the navigation bar follows the theme.
+            LaunchedEffect(dark) {
+                this@MainActivity.enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+                    navigationBarStyle = if (dark) {
+                        SystemBarStyle.dark(0xFF141A2E.toInt())
+                    } else {
+                        SystemBarStyle.light(0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt())
+                    },
+                )
+            }
+            BazaaryarTheme(theme) {
+                // L.lang is snapshot state: switching FA/EN flips direction and every tr() text instantly.
+                CompositionLocalProvider(LocalLayoutDirection provides L.dir) {
                     AskNotificationPermission()
-                    AppRoot(vm)
+                    AppRoot(vm, theme)
                 }
             }
         }
@@ -120,16 +141,37 @@ private fun AskNotificationPermission() {
     }
 }
 
-private data class Tab(val label: String, val icon: ImageVector)
+private class Tab(private val fa: String, private val en: String, val icon: ImageVector) {
+    val label: String get() = tr(fa, en)
+}
+
 private val TABS = listOf(
-    Tab("اخبار", Icons.Filled.Event),
-    Tab("بازار", Icons.Filled.BarChart),
-    Tab("واچ‌لیست", Icons.Filled.Star),
-    Tab("هشدارها", Icons.Filled.NotificationsActive),
+    Tab("اخبار", "News", Icons.Filled.Event),
+    Tab("بازار", "Market", Icons.Filled.BarChart),
+    Tab("واچ‌لیست", "Watchlist", Icons.Filled.Star),
+    Tab("هشدارها", "Alerts", Icons.Filled.NotificationsActive),
 )
 
+private fun ThemeMode.next(): ThemeMode = when (this) {
+    ThemeMode.SYSTEM -> ThemeMode.LIGHT
+    ThemeMode.LIGHT -> ThemeMode.DARK
+    ThemeMode.DARK -> ThemeMode.SYSTEM
+}
+
+private fun ThemeMode.icon(): ImageVector = when (this) {
+    ThemeMode.SYSTEM -> Icons.Filled.BrightnessAuto
+    ThemeMode.LIGHT -> Icons.Filled.LightMode
+    ThemeMode.DARK -> Icons.Filled.DarkMode
+}
+
+private fun ThemeMode.label(): String = when (this) {
+    ThemeMode.SYSTEM -> tr("تم: خودکار", "Theme: system")
+    ThemeMode.LIGHT -> tr("تم: روشن", "Theme: light")
+    ThemeMode.DARK -> tr("تم: تیره", "Theme: dark")
+}
+
 @Composable
-private fun AppRoot(vm: MainViewModel) {
+private fun AppRoot(vm: MainViewModel, theme: ThemeMode) {
     var tab by rememberSaveable { mutableIntStateOf(1) }
     val market by vm.market.collectAsStateWithLifecycle()
     val watch by vm.watch.collectAsStateWithLifecycle()
@@ -140,23 +182,40 @@ private fun AppRoot(vm: MainViewModel) {
     val selected by vm.selected.collectAsStateWithLifecycle()
     val now = rememberNow()
     val rate = market.usdt?.toman
+    val chip = RoundedCornerShape(50)
 
     Scaffold(
         containerColor = C.Paper,
         topBar = {
             Row(
-                Modifier.fillMaxWidth().background(C.Deep).statusBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
+                Modifier.fillMaxWidth().background(C.headerBrush).statusBarsPadding()
+                    .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("بازاریار", color = C.Paper, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(
+                    tr("بازاریار", "Bazaaryar"), color = C.OnDeep, fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
+                )
+                Text(faTime(now), color = C.OnDeepMuted, fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
                 // Currency toggle: show every coin in USD or in Toman (via live USDT/IRT rate).
                 Text(
-                    if (toman) "تومان" else "دلار",
+                    if (toman) tr("تومان", "Toman") else tr("دلار", "USD"),
                     color = C.Deep, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(end = 10.dp).clip(RoundedCornerShape(50)).background(C.OnDeepMuted)
+                    modifier = Modifier.padding(end = 6.dp).clip(chip).background(C.OnDeepMuted)
                         .clickable { vm.setToman(!toman) }.padding(horizontal = 12.dp, vertical = 4.dp),
                 )
-                Text("${faTime(now)} تهران", color = C.OnDeepMuted, fontSize = 14.sp)
+                // Language switch: shows the language you would switch TO.
+                Text(
+                    if (L.en) "فا" else "EN",
+                    color = C.OnDeep, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(chip).background(C.OnDeep.copy(alpha = 0.16f))
+                        .clickable { vm.setLang(if (L.en) Lang.FA else Lang.EN) }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+                // Theme switch: system -> light -> dark.
+                IconButton(onClick = { vm.setTheme(theme.next()) }) {
+                    Icon(theme.icon(), contentDescription = theme.label(), tint = C.OnDeep, modifier = Modifier.size(22.dp))
+                }
             }
         },
         bottomBar = {
@@ -166,7 +225,11 @@ private fun AppRoot(vm: MainViewModel) {
                         selected = tab == i, onClick = { tab = i },
                         icon = { Icon(t.icon, contentDescription = t.label) },
                         label = { Text(t.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = C.Lead, selectedTextColor = C.Lead),
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = C.Lead, selectedTextColor = C.Lead,
+                            unselectedIconColor = C.Muted, unselectedTextColor = C.Muted,
+                            indicatorColor = C.Soft,
+                        ),
                     )
                 }
             }
