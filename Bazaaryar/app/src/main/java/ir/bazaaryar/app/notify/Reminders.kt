@@ -83,7 +83,7 @@ class ReminderReceiver : BroadcastReceiver() {
     }
 }
 
-/** Alarms are wiped on reboot and on app update: put the saved reminders back. */
+/** Alarms are wiped on reboot and on app update: put the saved reminders back and restart live alerts. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
@@ -93,7 +93,9 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 Reminders.ensureChannel(app)
-                Reminders.rescheduleAll(app, Prefs(app).alarms.first())
+                val prefs = Prefs(app)
+                Reminders.rescheduleAll(app, prefs.alarms.first())
+                if (prefs.alertSettings.first().background) LiveService.start(app)
             } finally {
                 result.finish()
             }

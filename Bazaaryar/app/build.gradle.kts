@@ -24,8 +24,8 @@ android {
         applicationId = "ir.bazaaryar.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "2.0"
     }
 
     signingConfigs {
@@ -72,4 +72,6 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.core:core-ktx:1.13.1")
+    // WebSocket (Binance live ticks) + HTTP with gzip and connection pooling. Ships its own R8 rules.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
