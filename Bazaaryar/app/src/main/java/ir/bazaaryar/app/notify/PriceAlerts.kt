@@ -31,7 +31,8 @@ import kotlin.math.abs
  * Instant, personalised price alerts.
  * - Sharp moves: |change| over the user's window (5m/15m/1h from live samples, 24h from the feed) >= threshold.
  * - Per-coin overrides: own threshold, one-shot target prices above/below.
- * Depending on [RingMode] the strongest hit rings the phone like an alarm clock ([AlarmRinger]).
+ * Depending on [RingMode] the strongest hit rings the phone like an alarm clock: through the phone's Clock app
+ * ([ClockRing]) when enabled and allowed, otherwise March's own alarm ([AlarmRinger]).
  * Evaluated on every live update (~1 s) by [ir.bazaaryar.app.data.PriceHub].
  */
 object PriceAlerts {
@@ -140,7 +141,7 @@ object PriceAlerts {
         val pct = fmtNum(s.thresholdPct.toDouble())
         post(
             context, "test",
-            "✅ " + greeting(s) + tr("اعلان‌های بازاریار فعال است", "Bazaaryar alerts are on"),
+            "✅ " + greeting(s) + tr("اعلان‌های March فعال است", "March alerts are on"),
             tr(
                 "هر وقت ارزی در ${s.window.label} بیش از ${fa(pct)}٪ جابه‌جا شد، همین‌طور فوری خبرت می‌کنم.",
                 "Whenever a coin moves more than $pct% within ${s.window.label}, you'll hear about it right away.",
@@ -149,17 +150,29 @@ object PriceAlerts {
         )
     }
 
-    /** Rings the phone exactly like a real alert would. */
+    /** Rings the phone exactly like a real alert would (Clock app or March's own alarm). */
     fun testAlarm(context: Context, s: AlertSettings) {
-        AlarmRinger.fire(
-            context,
+        alarm(
+            context, s, "test-alarm",
             "⏰ " + greeting(s) + tr("آزمایش زنگ هشدار", "Alarm test"),
             tr(
-                "وقتی قیمت به هدفت برسد گوشی همین‌طور زنگ می‌خورد. برای قطع، «قطع زنگ» را بزن.",
-                "This is how your phone rings when a price hits your target. Tap Stop to silence it.",
+                "وقتی قیمت به هدفت برسد گوشی همین‌طور زنگ می‌خورد. برای قطع، زنگ را قطع کن.",
+                "This is how your phone rings when a price hits your target. Stop it to silence it.",
             ),
             null, ORANGE,
         )
+    }
+
+    /**
+     * Rings the phone. Clock app first (if the user wants it and Android allows it); the alert details then stay
+     * in a regular notification. Otherwise March's own full-screen alarm, so the phone always rings.
+     */
+    private fun alarm(context: Context, s: AlertSettings, key: String, title: String, body: String, coinId: String?, color: Int) {
+        if (s.clockApp && ClockRing.ringNow(context, title)) {
+            post(context, key, title, body, coinId, color)
+        } else {
+            AlarmRinger.fire(context, title, body, coinId, color)
+        }
     }
 
     private fun greeting(s: AlertSettings): String = s.name.trim().let { if (it.isEmpty()) "" else it + tr("، ", ", ") }
@@ -183,7 +196,7 @@ object PriceAlerts {
             " · " + tr("آستانه‌ی تو: ", "your threshold: ") + fa(fmtNum(h.threshold)) + tr("٪", "%")
         val color = if (up) GREEN else RED
         if (ring) {
-            AlarmRinger.fire(context, title, body, c.id, color)
+            alarm(context, s, "${c.id}|move", title, body, c.id, color)
         } else {
             post(context, "${c.id}|move", title, body, c.id, color)
         }
@@ -195,7 +208,7 @@ object PriceAlerts {
         val body = (if (above) tr("بالای ", "Above ") else tr("زیر ", "Below ")) + t +
             " · " + tr("قیمت الان ", "now ") + priceLine(c, rate)
         if (rings(s, target = true)) {
-            AlarmRinger.fire(context, title, body, c.id, ORANGE)
+            alarm(context, s, "${c.id}|target", title, body, c.id, ORANGE)
         } else {
             post(context, "${c.id}|target", title, body, c.id, ORANGE)
         }

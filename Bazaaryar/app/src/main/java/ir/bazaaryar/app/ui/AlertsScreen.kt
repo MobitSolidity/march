@@ -32,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,13 +44,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import ir.bazaaryar.app.data.AlertDirection
 import ir.bazaaryar.app.data.AlertScope
 import ir.bazaaryar.app.data.AlertSettings
 import ir.bazaaryar.app.data.AlertWindow
 import ir.bazaaryar.app.data.Coin
 import ir.bazaaryar.app.data.CoinRule
+import ir.bazaaryar.app.data.RingMode
 import ir.bazaaryar.app.data.USDT_IRT_ID
+import ir.bazaaryar.app.notify.AlarmRinger
+import ir.bazaaryar.app.notify.ClockRing
 import kotlin.math.roundToInt
 
 @Composable
@@ -61,9 +67,13 @@ fun AlertsScreen(
     onRemoveRule: (String) -> Unit,
     onOpen: (String) -> Unit,
     onTest: () -> Unit,
+    onTestAlarm: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val ruleList = remember(rules) { rules.values.toList() }
+    // Re-read permissions whenever the user comes back from a system settings screen.
+    var resumes by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumes++ }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
@@ -76,6 +86,65 @@ fun AlertsScreen(
                     "اعلان فوری و شخصی وقتی قیمت در یک بازه‌ی کوتاه تند حرکت کند",
                     s.enabled,
                 ) { v -> onUpdate { it.copy(enabled = v) } }
+            }
+        }
+        item(key = "ring") {
+            Section {
+                val overlayOk = remember(resumes) { ClockRing.canOverlay(ctx) }
+                val clockOk = remember(resumes) { ClockRing.clockAvailable(ctx) }
+                val fullOk = remember(resumes) { AlarmRinger.canFullScreen(ctx) }
+                val exactOk = remember(resumes) { AlarmRinger.canExact(ctx) }
+                Text(tr("زنگ هشدار", "Alarm"), color = C.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    tr(
+                        "وقتی هشدار می‌آید گوشی مثل ساعت زنگ‌دار زنگ می‌زند تا خودت قطعش کنی.",
+                        "When an alert fires, the phone rings like an alarm clock until you stop it.",
+                    ),
+                    color = C.Muted, fontSize = 13.sp,
+                )
+                Pills { RingMode.entries.forEach { m -> Pill(m.label, s.ring == m) { onUpdate { it.copy(ring = m) } } } }
+                if (s.ring != RingMode.OFF) {
+                    SwitchRow(
+                        tr("زنگ از برنامه‌ی ساعت گوشی", "Ring through the Clock app"),
+                        tr(
+                            "هشدار با تایمر برنامه‌ی ساعت پخش می‌شود، دقیقاً مثل زنگ بیدارباش. اگر ممکن نباشد، زنگ داخلی March پخش می‌شود.",
+                            "Uses the Clock app's timer alarm, just like a wake-up alarm. If that's not possible, March's own alarm rings.",
+                        ),
+                        s.clockApp,
+                    ) { v -> onUpdate { it.copy(clockApp = v) } }
+                    if (s.clockApp && !clockOk) {
+                        PermissionRow(
+                            tr("برنامه‌ی ساعت سازگار پیدا نشد", "No compatible Clock app found"),
+                            tr("زنگ داخلی March استفاده می‌شود. می‌توانی Google Clock را نصب کنی.", "March's own alarm will be used. You can install Google Clock."),
+                        ) {}
+                    }
+                    if (s.clockApp && clockOk && !overlayOk) {
+                        PermissionRow(
+                            tr("اجازه‌ی «نمایش روی برنامه‌های دیگر» را بده", "Allow \"Display over other apps\""),
+                            tr(
+                                "بدون این اجازه وقتی اپ بسته است اندروید نمی‌گذارد ساعت باز شود و زنگ داخلی پخش می‌شود. روی شیائومی «نمایش پنجره‌های بازشو در پس‌زمینه» را هم روشن کن.",
+                                "Without it Android won't let the closed app open the Clock app, so March's own alarm rings. On Xiaomi also enable \"Display pop-up windows while running in the background\".",
+                            ),
+                        ) { ClockRing.openOverlaySettings(ctx) }
+                    }
+                    if (!fullOk) {
+                        PermissionRow(
+                            tr("اجازه‌ی «اعلان تمام‌صفحه» را بده", "Allow full-screen notifications"),
+                            tr("تا زنگ روی صفحه‌ی قفل نمایش داده شود.", "So the alarm shows over the lock screen."),
+                        ) { AlarmRinger.openFullScreenSettings(ctx) }
+                    }
+                    if (!exactOk) {
+                        PermissionRow(
+                            tr("اجازه‌ی «آلارم و یادآور» را بده", "Allow alarms & reminders"),
+                            tr("برای تعویق دقیق و زنگ مطمئن.", "For exact snooze and reliable ringing."),
+                        ) { AlarmRinger.openExactSettings(ctx) }
+                    }
+                    Button(
+                        onClick = onTestAlarm,
+                        colors = ButtonDefaults.buttonColors(containerColor = C.Lead),
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                    ) { Text(tr("آزمایش زنگ هشدار", "Test the alarm")) }
+                }
             }
         }
         item(key = "config") {
@@ -162,7 +231,7 @@ fun AlertsScreen(
                             Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                         )
                     }
-                }) { Text("حذف محدودیت باتری برای بازاریار", color = C.Lead) }
+                }) { Text("حذف محدودیت باتری برای March", color = C.Lead) }
             }
         }
         item(key = "rules-title") {
@@ -184,6 +253,18 @@ fun AlertsScreen(
         items(ruleList, key = { it.id }) { r ->
             RuleRow(r, coins.firstOrNull { it.id == r.id }, onOpen = { onOpen(r.id) }, onRemove = { onRemoveRule(r.id) })
         }
+        item(key = "update") { UpdateSection() }
+    }
+}
+
+@Composable
+private fun PermissionRow(title: String, sub: String, onClick: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(C.Soft)
+            .clickable(onClick = onClick).padding(12.dp),
+    ) {
+        Text("⚠️ " + title, color = C.Ember, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text(sub, color = C.Muted, fontSize = 12.sp)
     }
 }
 
