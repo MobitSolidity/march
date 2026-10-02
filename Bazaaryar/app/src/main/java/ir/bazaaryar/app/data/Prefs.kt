@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
 
+// Store name kept as-is so existing users keep their settings after the rename to March.
 private val Context.store by preferencesDataStore("bazaaryar")
 private val WATCH = stringSetPreferencesKey("watch")
 private val ALARMS = stringSetPreferencesKey("alarms")
@@ -29,6 +30,7 @@ private val A_COOLDOWN = intPreferencesKey("alert_cooldown")
 private val A_BG = booleanPreferencesKey("alert_bg")
 private val A_USDT = booleanPreferencesKey("alert_usdt")
 private val A_RING = stringPreferencesKey("alert_ring")
+private val A_CLOCK = booleanPreferencesKey("alert_clock_app")
 private val NAME = stringPreferencesKey("user_name")
 private val RULES = stringPreferencesKey("coin_rules")
 private val THEME = stringPreferencesKey("theme")
@@ -53,6 +55,7 @@ private fun readSettings(p: Preferences) = AlertSettings(
     includeUsdt = p[A_USDT] ?: true,
     name = p[NAME] ?: "",
     ring = enumOr(p[A_RING], RingMode.ALL),
+    clockApp = p[A_CLOCK] ?: true,
 )
 
 private fun MutablePreferences.write(s: AlertSettings) {
@@ -66,6 +69,7 @@ private fun MutablePreferences.write(s: AlertSettings) {
     this[A_USDT] = s.includeUsdt
     this[NAME] = s.name
     this[A_RING] = s.ring.name
+    this[A_CLOCK] = s.clockApp
 }
 
 private fun JSONObject.optNum(k: String): Double? =

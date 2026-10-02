@@ -128,6 +128,8 @@ data class AlertSettings(
     val name: String = "",
     /** Ring like an alarm clock (full screen, alarm stream, vibration) instead of a plain notification. */
     val ring: RingMode = RingMode.ALL,
+    /** Ring through the phone's Clock app (timer alarm) when Android allows it; March's own alarm otherwise. */
+    val clockApp: Boolean = true,
 )
 
 /** Per-coin overrides: own % threshold and one-shot target prices (USD, or Toman for USDT/IRT). */

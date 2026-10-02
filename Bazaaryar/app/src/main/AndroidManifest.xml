@@ -10,8 +10,21 @@
     <!-- Price alarm: ring over the lock screen like an alarm clock. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <!-- Lets the News tab hand a reminder to the phone's Clock app. -->
+    <!-- Hands alarms/timers to the phone's Clock app. -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- "Display over other apps": lets the closed app open the Clock app when a price alert fires. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- In-app update from GitHub Releases. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SET_TIMER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+    </queries>
 
     <application
         android:label="@string/app_name"
@@ -31,7 +44,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Full-screen ringing alarm, shown over the lock screen. -->
+        <!-- Full-screen ringing alarm, shown over the lock screen (fallback when the Clock app can't be used). -->
         <activity
             android:name=".AlarmActivity"
             android:exported="false"
@@ -58,5 +71,15 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Real-time cryptocurrency price monitoring for user-configured instant price alerts" />
         </service>
+        <!-- Shares the downloaded update APK with the system installer. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths" />
+        </provider>
     </application>
 </manifest>

@@ -8,24 +8,29 @@ plugins {
 }
 
 // Release signing. CI passes env vars (see README); locally you can use Bazaaryar/keystore.properties.
-// Neither the keystore nor keystore.properties may ever be committed.
+// Neither a real keystore nor keystore.properties may ever be committed.
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
-fun signingValue(env: String, prop: String): String? = System.getenv(env) ?: keystoreProps.getProperty(prop)
+fun signingValue(env: String, prop: String): String? = System.getenv(env)?.takeIf { it.isNotEmpty() } ?: keystoreProps.getProperty(prop)
 val releaseStore: String? = signingValue("BAZAARYAR_KEYSTORE", "storeFile")
+
+// Bump this for a new feature line. CI appends the run number (2.2.N) and uses 1000 + N as versionCode,
+// so every push to main becomes a newer GitHub Release that the in-app updater picks up.
+val baseVersion = "2.2"
 
 android {
     namespace = "ir.bazaaryar.app"
     compileSdk = 36
 
     defaultConfig {
+        // Kept unchanged on purpose: changing it would make March a different app and break updates.
         applicationId = "ir.bazaaryar.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "2.1"
+        versionCode = System.getenv("MARCH_VERSION_CODE")?.toIntOrNull() ?: 5
+        versionName = System.getenv("MARCH_VERSION_NAME")?.takeIf { it.isNotEmpty() } ?: baseVersion
     }
 
     signingConfigs {
