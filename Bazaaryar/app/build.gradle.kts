@@ -1,33 +1,63 @@
+import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Release signing. CI passes env vars (see README); locally you can use Bazaaryar/keystore.properties.
+// Neither the keystore nor keystore.properties may ever be committed.
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun signingValue(env: String, prop: String): String? = System.getenv(env) ?: keystoreProps.getProperty(prop)
+val releaseStore: String? = signingValue("BAZAARYAR_KEYSTORE", "storeFile")
+
 android {
     namespace = "ir.bazaaryar.app"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "ir.bazaaryar.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 2
         versionName = "1.1"
     }
+
+    signingConfigs {
+        if (releaseStore != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseStore)
+                storePassword = signingValue("BAZAARYAR_KEYSTORE_PASSWORD", "storePassword")
+                keyAlias = signingValue("BAZAARYAR_KEY_ALIAS", "keyAlias")
+                keyPassword = signingValue("BAZAARYAR_KEY_PASSWORD", "keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
-            // Debug key so the CI-built release APK is installable. Replace with your own keystore before publishing.
-            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Without a release keystore the build still works, but is signed with the debug key and is NOT publishable.
+            signingConfig = if (releaseStore != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    lint { abortOnError = false }
+}
+
+kotlin {
+    compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
 }
 
 dependencies {
