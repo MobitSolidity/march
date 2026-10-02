@@ -3,64 +3,67 @@ package ir.bazaaryar.app
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import ir.bazaaryar.app.data.Coin
-import ir.bazaaryar.app.data.CoinRepository
+import ir.bazaaryar.app.data.AlertSettings
+import ir.bazaaryar.app.data.CoinRule
 import ir.bazaaryar.app.data.EVENTS
+import ir.bazaaryar.app.data.MarketState
 import ir.bazaaryar.app.data.Prefs
+import ir.bazaaryar.app.data.PriceHub
+import ir.bazaaryar.app.notify.LiveService
+import ir.bazaaryar.app.notify.PriceAlerts
 import ir.bazaaryar.app.notify.Reminders
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-
-data class MarketState(
-    val coins: List<Coin> = emptyList(),
-    val loading: Boolean = true,
-    val error: String? = null,
-    val updatedAt: Long = 0L,
-)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = Prefs(app)
-    private val _market = MutableStateFlow(MarketState())
-    val market: StateFlow<MarketState> = _market.asStateFlow()
 
+    /** Live prices. The hub runs only while the activity is started or the background service is on. */
+    val market: StateFlow<MarketState> = PriceHub.state
     val watch = prefs.watch.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
     val alarms = prefs.alarms.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+    val toman = prefs.toman.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val settings: StateFlow<AlertSettings?> = prefs.alertSettings.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val rules = prefs.rules.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
-    private var refreshJob: Job? = null
+    private val _selected = MutableStateFlow<String?>(null)
+    val selected: StateFlow<String?> = _selected.asStateFlow()
 
     init {
         Reminders.ensureChannel(app)
+        PriceAlerts.ensureChannel(app)
         // Restore saved reminders in case the system dropped them (reboot, force-stop, update).
         viewModelScope.launch { Reminders.rescheduleAll(app, prefs.alarms.first()) }
+        // Background live monitor follows the user's switch.
         viewModelScope.launch {
-            while (isActive) {
-                refresh()
-                delay(60_000) // free API: refresh every minute
+            prefs.alertSettings.map { it.background }.distinctUntilChanged().collect { on ->
+                if (on) LiveService.start(app) else LiveService.stop(app)
             }
         }
     }
 
-    /** Ignored while a request is already in flight, so the refresh button can't stack calls. */
-    fun refresh() {
-        if (refreshJob?.isActive == true) return
-        refreshJob = viewModelScope.launch {
-            _market.update { it.copy(loading = true) }
-            runCatching { CoinRepository.fetchTop100() }
-                .onSuccess { list -> _market.update { MarketState(list, false, null, System.currentTimeMillis()) } }
-                .onFailure { e -> _market.update { it.copy(loading = false, error = e.message ?: "خطای شبکه") } }
-        }
-    }
+    fun refresh() = PriceHub.refreshNow()
+
+    fun select(id: String?) { _selected.value = id }
 
     fun toggleWatch(id: String) { viewModelScope.launch { prefs.toggleWatch(id) } }
+
+    fun setToman(on: Boolean) { viewModelScope.launch { prefs.setToman(on) } }
+
+    fun updateSettings(change: (AlertSettings) -> AlertSettings) { viewModelScope.launch { prefs.updateSettings(change) } }
+
+    fun saveRule(rule: CoinRule) { viewModelScope.launch { prefs.setRule(rule) } }
+
+    fun removeRule(id: String) { viewModelScope.launch { prefs.setRule(CoinRule(id)) } }
+
+    fun testAlert() { PriceAlerts.test(getApplication(), settings.value ?: AlertSettings()) }
 
     fun toggleAlarm(id: String) { viewModelScope.launch {
         val event = EVENTS.firstOrNull { it.id == id } ?: return@launch
