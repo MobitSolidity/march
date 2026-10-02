@@ -9,7 +9,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import ir.bazaaryar.app.data.Coin
 import kotlinx.coroutines.delay
+import java.math.BigDecimal
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
@@ -20,10 +22,12 @@ private val FA = ULocale("fa_IR@calendar=persian")
 private val TZ = TimeZone.getTimeZone("Asia/Tehran")
 private val dayFmt = SimpleDateFormat("EEEE d MMMM", FA).apply { timeZone = TZ }
 private val timeFmt = SimpleDateFormat("HH:mm", FA).apply { timeZone = TZ }
+private val clockFmt = SimpleDateFormat("HH:mm:ss", FA).apply { timeZone = TZ }
 private val keyFmt = SimpleDateFormat("yyyy-MM-dd", ULocale.ENGLISH).apply { timeZone = TZ }
 
 fun faDay(ms: Long): String = dayFmt.format(Date(ms))
 fun faTime(ms: Long): String = timeFmt.format(Date(ms))
+fun faClock(ms: Long): String = clockFmt.format(Date(ms))
 fun dayKey(ms: Long): String = keyFmt.format(Date(ms))
 
 data class Split(val d: Long, val h: Long, val m: Long, val s: Long)
@@ -51,9 +55,46 @@ fun fmtPrice(p: Double): String = when {
 fun fmtCap(v: Double): String = when {
     v >= 1e12 -> String.format(Locale.US, "$%.2fT", v / 1e12)
     v >= 1e9 -> String.format(Locale.US, "$%.1fB", v / 1e9)
-    else -> String.format(Locale.US, "$%.0fM", v / 1e6)
+    v >= 1e6 -> String.format(Locale.US, "$%.1fM", v / 1e6)
+    else -> String.format(Locale.US, "$%,.0f", v)
 }
 fun fmtPct(v: Double): String = (if (v >= 0) "▲ " else "▼ ") + String.format(Locale.US, "%.2f%%", abs(v))
+
+/** Toman amount with the ت suffix. */
+fun fmtToman(v: Double): String = fmtPrice(v) + " ت"
+
+/** Price as the user wants to see it. USDT/IRT is always shown in Toman. */
+fun coinPrice(c: Coin, toman: Boolean, rate: Double?): String = when {
+    c.isToman -> fmtToman(c.price)
+    toman && rate != null && rate > 0 -> fmtToman(c.price * rate)
+    else -> "$" + fmtPrice(c.price)
+}
+
+/** Latin digits to Persian digits. */
+fun fa(s: String): String = buildString {
+    for (ch in s) append(if (ch in '0'..'9') '۰' + (ch - '0') else ch)
+}
+
+fun fmtNum(v: Double): String =
+    if (abs(v - Math.rint(v)) < 1e-9) String.format(Locale.US, "%.0f", v) else String.format(Locale.US, "%.1f", v)
+
+fun plainNum(v: Double): String = BigDecimal.valueOf(v).stripTrailingZeros().toPlainString()
+
+/** Parses user input with Persian/Arabic digits and thousands separators. Null if empty or not positive. */
+fun parseNum(s: String): Double? {
+    val t = buildString {
+        for (ch in s.trim()) {
+            when (ch) {
+                in '۰'..'۹' -> append('0' + (ch - '۰'))
+                in '٠'..'٩' -> append('0' + (ch - '٠'))
+                ',', '٬', ' ' -> Unit
+                '٫' -> append('.')
+                else -> append(ch)
+            }
+        }
+    }
+    return t.toDoubleOrNull()?.takeIf { it > 0 }
+}
 
 /** Ticks once a second while on screen. */
 @Composable
