@@ -1,6 +1,7 @@
 package ir.bazaaryar.app
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -34,11 +35,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ir.bazaaryar.app.data.EVENTS
 import ir.bazaaryar.app.ui.BazaaryarTheme
@@ -65,11 +68,21 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Asks once, and only if not already granted (no repeat prompt on every rotation). */
 @Composable
 private fun AskNotificationPermission() {
     if (Build.VERSION.SDK_INT < 33) return
+    val context = LocalContext.current
+    var asked by rememberSaveable { mutableIntStateOf(0) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    LaunchedEffect(Unit) { launcher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+    LaunchedEffect(Unit) {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted && asked == 0) {
+            asked = 1
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 }
 
 private data class Tab(val label: String, val icon: ImageVector)
