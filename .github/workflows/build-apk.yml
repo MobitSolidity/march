@@ -1,0 +1,50 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project if needed
+        run: |
+          shopt -s nullglob
+          for z in *.zip; do mkdir -p _src; unzip -o -q "$z" -d _src; done
+
+      - name: Locate Gradle project root
+        id: locate
+        run: |
+          ROOT=$(find . -path ./.git -prune -o \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print \
+                 | grep -v '/__MACOSX/' | awk '{ print length, $0 }' | sort -n | head -n1 | cut -d' ' -f2-)
+          if [ -z "$ROOT" ]; then echo "::error::No settings.gradle found"; find . -path ./.git -prune -o -type f -print | head -200; exit 1; fi
+          ROOT=$(dirname "$ROOT"); echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+          if [ -f "$ROOT/gradlew" ] && [ -f "$ROOT/gradle/wrapper/gradle-wrapper.jar" ]; then echo "wrapper=true" >> "$GITHUB_OUTPUT"; else echo "wrapper=false" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ steps.locate.outputs.wrapper == 'true' && 'wrapper' || '8.7' }}
+
+      - name: Build debug APK
+        working-directory: ${{ steps.locate.outputs.root }}
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          if [ "${{ steps.locate.outputs.wrapper }}" = "true" ]; then chmod +x gradlew; ./gradlew assembleDebug --stacktrace; else gradle assembleDebug --stacktrace; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: ${{ steps.locate.outputs.root }}/**/build/outputs/apk/**/*.apk
+          if-no-files-found: error
