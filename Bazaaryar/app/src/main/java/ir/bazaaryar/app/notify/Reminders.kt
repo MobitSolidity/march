@@ -13,6 +13,8 @@ import ir.bazaaryar.app.MainActivity
 import ir.bazaaryar.app.data.EVENTS
 import ir.bazaaryar.app.data.EconEvent
 import ir.bazaaryar.app.data.Prefs
+import ir.bazaaryar.app.ui.L
+import ir.bazaaryar.app.ui.tr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -24,7 +26,7 @@ const val LEAD_MINUTES = 10L
 object Reminders {
     private fun pending(context: Context, e: EconEvent): PendingIntent {
         val intent = Intent(context, ReminderReceiver::class.java)
-            .putExtra("title", e.title)
+            .putExtra("title", e.label)
             .putExtra("id", e.id)
         return PendingIntent.getBroadcast(
             context, e.id.hashCode(), intent,
@@ -51,7 +53,9 @@ object Reminders {
 
     fun ensureChannel(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "انتشار اخبار اقتصادی", NotificationManager.IMPORTANCE_HIGH))
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL, tr("انتشار اخبار اقتصادی", "Economic releases"), NotificationManager.IMPORTANCE_HIGH),
+        )
     }
 }
 
@@ -68,10 +72,10 @@ class ReminderReceiver : BroadcastReceiver() {
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(title)
-            .setContentText("$LEAD_MINUTES دقیقه تا انتشار")
+            .setContentText(tr("$LEAD_MINUTES دقیقه تا انتشار", "$LEAD_MINUTES minutes to release"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setColor(0xFFE84A00.toInt())
+            .setColor(0xFFEA580C.toInt())
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
@@ -92,8 +96,9 @@ class BootReceiver : BroadcastReceiver() {
         val result = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                Reminders.ensureChannel(app)
                 val prefs = Prefs(app)
+                L.lang = prefs.look.first().lang
+                Reminders.ensureChannel(app)
                 Reminders.rescheduleAll(app, prefs.alarms.first())
                 if (prefs.alertSettings.first().background) LiveService.start(app)
             } finally {

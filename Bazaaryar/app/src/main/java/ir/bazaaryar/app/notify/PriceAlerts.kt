@@ -17,24 +17,31 @@ import ir.bazaaryar.app.data.Coin
 import ir.bazaaryar.app.data.CoinRule
 import ir.bazaaryar.app.data.MarketState
 import ir.bazaaryar.app.data.PriceHistory
+import ir.bazaaryar.app.data.RingMode
 import ir.bazaaryar.app.data.USDT_IRT_ID
 import ir.bazaaryar.app.ui.fa
 import ir.bazaaryar.app.ui.fmtNum
 import ir.bazaaryar.app.ui.fmtPct
 import ir.bazaaryar.app.ui.fmtPrice
 import ir.bazaaryar.app.ui.fmtToman
+import ir.bazaaryar.app.ui.tr
 import kotlin.math.abs
 
 /**
  * Instant, personalised price alerts.
  * - Sharp moves: |change| over the user's window (5m/15m/1h from live samples, 24h from the feed) >= threshold.
  * - Per-coin overrides: own threshold, one-shot target prices above/below.
+ * Depending on [RingMode] the strongest hit rings the phone like an alarm clock ([AlarmRinger]).
  * Evaluated on every live update (~1 s) by [ir.bazaaryar.app.data.PriceHub].
  */
 object PriceAlerts {
     const val CHANNEL = "price_alerts"
     const val EXTRA_COIN = "coin"
     private const val MAX_PER_ROUND = 3
+    private val GREEN = 0xFF059669.toInt()
+    private val RED = 0xFFE11D48.toInt()
+    private val ORANGE = 0xFFEA580C.toInt()
+    private val INDIGO = 0xFF6366F1.toInt()
 
     private val lastFired = HashMap<String, Long>()
     private val firedTargets = HashSet<String>()
@@ -43,13 +50,20 @@ object PriceAlerts {
 
     fun ensureChannel(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        val ch = NotificationChannel(CHANNEL, "هشدار نوسان قیمت", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "اعلان فوری وقتی قیمت به آستانه‌ی تو می‌رسد"
+        val ch = NotificationChannel(CHANNEL, tr("هشدار نوسان قیمت", "Price move alerts"), NotificationManager.IMPORTANCE_HIGH).apply {
+            description = tr("اعلان فوری وقتی قیمت به آستانه‌ی تو می‌رسد", "Instant notification when a price crosses your threshold")
             enableVibration(true)
             vibrationPattern = longArrayOf(0, 250, 150, 250)
             enableLights(true)
         }
         nm.createNotificationChannel(ch)
+        AlarmRinger.ensureChannel(context)
+    }
+
+    private fun rings(s: AlertSettings, target: Boolean): Boolean = when (s.ring) {
+        RingMode.OFF -> false
+        RingMode.TARGETS -> target
+        RingMode.ALL -> true
     }
 
     @Synchronized
@@ -107,7 +121,8 @@ object PriceAlerts {
         }
         if (hits.isEmpty()) return
         hits.sortByDescending { abs(it.pct) }
-        hits.take(MAX_PER_ROUND).forEach { postMove(context, s, it, rate) }
+        val ringTop = rings(s, target = false)
+        hits.take(MAX_PER_ROUND).forEachIndexed { i, h -> postMove(context, s, h, rate, ring = ringTop && i == 0) }
         if (hits.size > MAX_PER_ROUND) postSummary(context, s, hits.drop(MAX_PER_ROUND))
     }
 
@@ -122,15 +137,32 @@ object PriceAlerts {
     }
 
     fun test(context: Context, s: AlertSettings) {
+        val pct = fmtNum(s.thresholdPct.toDouble())
         post(
             context, "test",
-            "✅ ${greeting(s)}اعلان‌های بازاریار فعال است",
-            "هر وقت ارزی در ${s.window.label} بیش از ${fa(fmtNum(s.thresholdPct.toDouble()))}٪ جابه‌جا شد، همین‌طور فوری خبرت می‌کنم.",
-            null, 0xFF006289.toInt(),
+            "✅ " + greeting(s) + tr("اعلان‌های بازاریار فعال است", "Bazaaryar alerts are on"),
+            tr(
+                "هر وقت ارزی در ${s.window.label} بیش از ${fa(pct)}٪ جابه‌جا شد، همین‌طور فوری خبرت می‌کنم.",
+                "Whenever a coin moves more than $pct% within ${s.window.label}, you'll hear about it right away.",
+            ),
+            null, INDIGO,
         )
     }
 
-    private fun greeting(s: AlertSettings): String = s.name.trim().let { if (it.isEmpty()) "" else "${it}، " }
+    /** Rings the phone exactly like a real alert would. */
+    fun testAlarm(context: Context, s: AlertSettings) {
+        AlarmRinger.fire(
+            context,
+            "⏰ " + greeting(s) + tr("آزمایش زنگ هشدار", "Alarm test"),
+            tr(
+                "وقتی قیمت به هدفت برسد گوشی همین‌طور زنگ می‌خورد. برای قطع، «قطع زنگ» را بزن.",
+                "This is how your phone rings when a price hits your target. Tap Stop to silence it.",
+            ),
+            null, ORANGE,
+        )
+    }
+
+    private fun greeting(s: AlertSettings): String = s.name.trim().let { if (it.isEmpty()) "" else it + tr("، ", ", ") }
 
     private fun priceLine(c: Coin, rate: Double?): String = when {
         c.isToman -> fmtToman(c.price)
@@ -138,28 +170,42 @@ object PriceAlerts {
         else -> "$" + fmtPrice(c.price)
     }
 
-    private fun postMove(context: Context, s: AlertSettings, h: Hit, rate: Double?) {
+    private fun postMove(context: Context, s: AlertSettings, h: Hit, rate: Double?, ring: Boolean) {
         val c = h.coin
         val up = h.pct > 0
-        val title = (if (up) "🚀 " else "🔻 ") + greeting(s) +
-            "${c.symbol} در ${s.window.label} ${fa(fmtNum(abs(h.pct)))}٪ " + (if (up) "رشد کرد" else "ریزش کرد")
-        val body = "قیمت الان " + priceLine(c, rate) +
-            "\nتغییر ۲۴ ساعته: " + fmtPct(c.change24h) +
-            " · آستانه‌ی تو: " + fa(fmtNum(h.threshold)) + "٪"
-        post(context, "${c.id}|move", title, body, c.id, if (up) 0xFF0B6B4A.toInt() else 0xFFBB1D2C.toInt())
+        val pct = fmtNum(abs(h.pct))
+        val title = (if (up) "🚀 " else "🔻 ") + greeting(s) + tr(
+            "${c.symbol} در ${s.window.label} ${fa(pct)}٪ " + (if (up) "رشد کرد" else "ریزش کرد"),
+            "${c.symbol} " + (if (up) "rose" else "fell") + " $pct% in ${s.window.label}",
+        )
+        val body = tr("قیمت الان ", "Now ") + priceLine(c, rate) +
+            "\n" + tr("تغییر ۲۴ ساعته: ", "24h change: ") + fmtPct(c.change24h) +
+            " · " + tr("آستانه‌ی تو: ", "your threshold: ") + fa(fmtNum(h.threshold)) + tr("٪", "%")
+        val color = if (up) GREEN else RED
+        if (ring) {
+            AlarmRinger.fire(context, title, body, c.id, color)
+        } else {
+            post(context, "${c.id}|move", title, body, c.id, color)
+        }
     }
 
     private fun postTarget(context: Context, s: AlertSettings, c: Coin, target: Double, above: Boolean, rate: Double?) {
         val t = if (c.isToman) fmtToman(target) else "$" + fmtPrice(target)
-        val title = "🎯 " + greeting(s) + "${c.symbol} به قیمت هدفت رسید"
-        val body = (if (above) "بالای " else "زیر ") + t + " · قیمت الان " + priceLine(c, rate)
-        post(context, "${c.id}|target", title, body, c.id, 0xFFE84A00.toInt())
+        val title = "🎯 " + greeting(s) + tr("${c.symbol} به قیمت هدفت رسید", "${c.symbol} hit your target")
+        val body = (if (above) tr("بالای ", "Above ") else tr("زیر ", "Below ")) + t +
+            " · " + tr("قیمت الان ", "now ") + priceLine(c, rate)
+        if (rings(s, target = true)) {
+            AlarmRinger.fire(context, title, body, c.id, ORANGE)
+        } else {
+            post(context, "${c.id}|target", title, body, c.id, ORANGE)
+        }
     }
 
     private fun postSummary(context: Context, s: AlertSettings, rest: List<Hit>) {
-        val title = "⚡ " + greeting(s) + "نوسان شدید در " + fa(rest.size.toString()) + " ارز دیگر"
-        val body = rest.take(8).joinToString("، ") { it.coin.symbol + " " + fmtPct(it.pct) }
-        post(context, "summary", title, body, null, 0xFFE84A00.toInt())
+        val n = rest.size.toString()
+        val title = "⚡ " + greeting(s) + tr("نوسان شدید در " + fa(n) + " ارز دیگر", "Sharp moves in $n more coins")
+        val body = rest.take(8).joinToString(tr("، ", ", ")) { it.coin.symbol + " " + fmtPct(it.pct) }
+        post(context, "summary", title, body, null, ORANGE)
     }
 
     private fun post(context: Context, key: String, title: String, body: String, coinId: String?, color: Int) {

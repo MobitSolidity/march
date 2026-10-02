@@ -67,17 +67,10 @@ object CoinRepository {
         )
     }
 
+    /** Value plus the raw English classification; the UI translates it. */
     private fun parseFng(json: String): Pair<Int, String>? {
         val o = JSONObject(json).getJSONArray("data").getJSONObject(0)
         val v = o.optString("value").toIntOrNull() ?: return null
-        val label = when (o.optString("value_classification")) {
-            "Extreme Fear" -> "ترس شدید"
-            "Fear" -> "ترس"
-            "Neutral" -> "خنثی"
-            "Greed" -> "طمع"
-            "Extreme Greed" -> "طمع شدید"
-            else -> ""
-        }
-        return v to label
+        return v to o.optString("value_classification")
     }
 }

@@ -24,8 +24,8 @@ android {
         applicationId = "ir.bazaaryar.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "2.0"
+        versionCode = 4
+        versionName = "2.1"
     }
 
     signingConfigs {
@@ -59,6 +59,30 @@ android {
 kotlin {
     compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
 }
+
+// ---- Vazirmatn typeface (SIL OFL) ----
+// The repo stays text-only: the TTFs are downloaded once (pinned commit) into src/main/res/font before the build.
+val vazirmatnRev = "6e553e33489a8f9dfaccc76860a2e3f3c1e66de7"
+val vazirmatnWeights = listOf("Regular", "Medium", "SemiBold", "Bold", "ExtraBold")
+val fetchFonts = tasks.register("fetchFonts") {
+    group = "build setup"
+    description = "Downloads the Vazirmatn font files into src/main/res/font if they are missing."
+    val dir = file("src/main/res/font")
+    doLast {
+        dir.mkdirs()
+        for (w in vazirmatnWeights) {
+            val target = File(dir, "vazirmatn_${w.lowercase()}.ttf")
+            if (target.isFile && target.length() > 50_000) continue
+            val url = uri("https://raw.githubusercontent.com/rastikerdar/vazirmatn/$vazirmatnRev/fonts/ttf/Vazirmatn-$w.ttf").toURL()
+            logger.lifecycle("Downloading $url")
+            val tmp = File(temporaryDir, target.name)
+            url.openStream().use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            tmp.copyTo(target, overwrite = true)
+            tmp.delete()
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(fetchFonts) }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.09.02")

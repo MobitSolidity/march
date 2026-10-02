@@ -19,6 +19,7 @@ import ir.bazaaryar.app.data.Prefs
 import ir.bazaaryar.app.data.PriceHub
 import ir.bazaaryar.app.ui.fmtPrice
 import ir.bazaaryar.app.ui.fmtToman
+import ir.bazaaryar.app.ui.tr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,8 +27,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Foreground service that keeps [PriceHub] (and therefore alert evaluation) running while the app is closed.
- * In background only watch-list / custom-rule coins are streamed, so data usage stays low.
+ * Foreground service that keeps [PriceHub] (and therefore alert evaluation and alarm ringing) running while
+ * the app is closed. In background only watch-list / custom-rule coins are streamed, so data usage stays low.
  */
 class LiveService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -39,7 +40,7 @@ class LiveService : Service() {
         super.onCreate()
         ensureChannel(this)
         PriceAlerts.ensureChannel(this)
-        goForeground(build("در حال اتصال به بازار…"))
+        goForeground(build(tr("در حال اتصال به بازار…", "Connecting to the market…")))
         PriceHub.acquire(this, ui = false)
         acquired = true
         scope.launch {
@@ -49,7 +50,7 @@ class LiveService : Service() {
                 if (now - last < 20_000L) return@collect
                 val parts = ArrayList<String>()
                 st.coins.firstOrNull { it.id == "bitcoin" }?.let { parts += "BTC $" + fmtPrice(it.price) }
-                st.usdt?.let { parts += "تتر " + fmtToman(it.toman) }
+                st.usdt?.let { parts += tr("تتر ", "USDT ") + fmtToman(it.toman) }
                 if (parts.isEmpty()) return@collect
                 last = now
                 try {
@@ -100,14 +101,14 @@ class LiveService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_pulse)
-            .setContentTitle("پایش زنده‌ی قیمت فعال است")
+            .setContentTitle(tr("پایش زنده‌ی قیمت فعال است", "Live price monitor is on"))
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setContentIntent(open)
-            .addAction(0, "توقف", stop)
+            .addAction(0, tr("توقف", "Stop"), stop)
             .build()
     }
 
@@ -118,7 +119,7 @@ class LiveService : Service() {
 
         fun ensureChannel(context: Context) {
             context.getSystemService(NotificationManager::class.java)?.createNotificationChannel(
-                NotificationChannel(CHANNEL, "پایش زنده (پس‌زمینه)", NotificationManager.IMPORTANCE_LOW),
+                NotificationChannel(CHANNEL, tr("پایش زنده (پس‌زمینه)", "Live monitor (background)"), NotificationManager.IMPORTANCE_LOW),
             )
         }
 
