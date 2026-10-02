@@ -1,44 +1,26 @@
-# بازاریار (اندروید) · نسخه ۲.۰
+# March (Market Watch) for Android
 
-اپ Kotlin + Jetpack Compose، راست‌به‌چپ، با چهار تب:
+March is a Persian/English crypto market watcher. The name is short for **Market Watch**.
 
-- **اخبار**: تقویم انتشارهای مهم اقتصادی به وقت تهران، شمارش معکوس زنده، فیلتر «فقط پراهمیت» و یادآور (۱۰ دقیقه قبل).
-- **بازار**: ۲۰۰ ارز برتر + **تتر به تومان** (پین‌شده بالای لیست). قیمت‌ها لحظه‌ای (حدود هر ۱ ثانیه) با چشمک سبز/قرمز، مرتب‌سازی (رتبه، رشد، افت، حجم)، ارزش کل بازار، دامیننس بیت‌کوین و شاخص ترس و طمع. با زدن روی هر ارز: نمودار ۷ روزه، سقف/کف ۲۴ساعته، حجم، ATH و هشدار اختصاصی.
-- **واچ‌لیست**: ارزهای ستاره‌دار (تتر/تومان پیش‌فرض) و یادآورهای خبری.
-- **هشدارها**: اعلان فوری و شخصی‌سازی‌شده برای نوسان شدید.
+## What is included
 
-دکمه‌ی «دلار / تومان» بالای صفحه همه‌ی قیمت‌ها را با نرخ زنده‌ی تتر به تومان نشان می‌دهد.
+- Live market prices, USDT/Toman, watchlist, economic-release reminders and per-coin price rules.
+- Price alerts can ring the phone like a wake-up alarm. March first tries the device's own Clock app with a one-second timer, so the phone uses its alarm stream and the user must stop it. If Android blocks opening Clock from the background, March's full-screen alarm fallback rings instead.
+- The Alerts tab has a **Clock app alarm** switch, a test button and links for the permissions Android may require: notifications, exact alarms, full-screen notifications and display-over-other-apps. On Xiaomi, enable the relevant background pop-up permission too.
+- The Alerts tab also has **App update**. It checks the latest GitHub Release, downloads the APK, and opens Android's installer. The first update may ask for permission to install unknown apps. A matching application ID and stable signing key are required for seamless updates.
 
-## منابع قیمت
+## Build and release
 
-| داده | منبع | تناوب |
-|---|---|---|
-| لیست ۲۰۰ ارز، رتبه، ارزش بازار، نمودار ۷ روزه | CoinGecko | ۶۰ ثانیه (پس‌زمینه: ۵ دقیقه) |
-| قیمت لحظه‌ای | WebSocket بازار بایننس (`data-stream.binance.vision`) | ~۱ ثانیه |
-| جایگزین لحظه‌ای وقتی بایننس در دسترس نیست | نوبیتکس (بازارهای USDT) | ۱۰ ثانیه |
-| تتر / تومان | نوبیتکس، در صورت خطا والکس | ۱۰ ثانیه |
+The workflow at `.github/workflows/build-apk.yml` builds an APK and AAB on every push to `main`, assigns a monotonically increasing version (`2.2.<run number>`), and publishes a GitHub Release with both files. The in-app updater reads the latest release and selects the APK asset.
 
-قیمت لحظه‌ای فقط وقتی جایگزین قیمت CoinGecko می‌شود که اختلافش کمتر از ۳۰٪ باشد (جلوگیری از قاطی شدن توکن‌های هم‌نماد).
+The GitHub connection used to write this change could not edit workflow files directly, so `ci/build-and-release.yml` is a ready-to-copy workflow. Copy it to `.github/workflows/build-apk.yml` once, then commit it. It needs the repository's **Actions: Read and write permissions**.
 
-## هشدار نوسان
+For production, replace the fallback CI key with GitHub Actions secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, and `KEY_PASSWORD`. The checked-in `ci/march-ci.jks.b64` is only a stable development fallback so repeated CI releases can update over one another. Do not use it for Google Play or a public store.
 
-- آستانه‌ی درصد (۰٫۵ تا ۲۰٪)، بازه (۵ دقیقه، ۱۵ دقیقه، ۱ ساعت، ۲۴ ساعت)، جهت (رشد/ریزش/هر دو)، دامنه (واچ‌لیست یا همه‌ی ۲۰۰ ارز) و فاصله‌ی بین دو اعلان، همه قابل تنظیم.
-- برای هر ارز: آستانه‌ی اختصاصی و قیمت هدف بالا/پایین (یک‌بارمصرف).
-- اعلان با اسم کاربر، قیمت دلاری و معادل تومانی؛ با زدن روی اعلان صفحه‌ی همان ارز باز می‌شود.
-- **پایش زنده در پس‌زمینه** (پیش‌فرض روشن): یک Foreground Service سبک که وقتی اپ بسته است هم هشدارها را فوری می‌فرستد و بعد از ری‌استارت گوشی خودکار برمی‌گردد. در پس‌زمینه فقط ارزهای واچ‌لیست و هشدارهای اختصاصی استریم می‌شوند تا اینترنت کم مصرف شود.
-- روی گوشی‌های شیائومی/سامسونگ/هواوی از تب هشدارها «حذف محدودیت باتری» را بزن، وگرنه سیستم ممکن است سرویس را ببندد.
+## Data sources
 
-## ساخت APK
+CoinGecko supplies the ranked market list and history. Binance WebSocket supplies fast quotes, with Nobitex fallbacks for live prices and USDT/Toman. Access from some regions may require a proxy or backend.
 
-**راه ۱: Android Studio**: پوشه را باز کن، Gradle sync، بعد Build › Build APK(s).
+## Install
 
-**راه ۲: GitHub Actions**: هر push روی `main` بیلد می‌گیرد؛ APK/AAB را از Artifacts دانلود کن.
-
-بدون secretهای `KEYSTORE_BASE64`، `KEYSTORE_PASSWORD`، `KEY_ALIAS`، `KEY_PASSWORD` خروجی با کلید debug امضا می‌شود و قابل انتشار نیست.
-
-## نکته‌ها
-
-- **دسترسی از ایران:** CoinGecko و بایننس ممکن است برای IPهای ایران محدود باشند. در این حالت تتر و قیمت‌های لحظه‌ای از نوبیتکس می‌آیند، ولی لیست ۲۰۰ ارز به CoinGecko نیاز دارد. برای انتشار عمومی یک پراکسی/بک‌اند کوچک توصیه می‌شود.
-- **مصرف اینترنت:** استریم لحظه‌ای ۲۰۰ ارز وقتی اپ باز است چند ده کیلوبایت در ثانیه مصرف می‌کند.
-- **تقویم خبرها** در `data/Events.kt` است؛ ماهانه به‌روزش کن.
-- برای انتشار در گوگل‌پلی، نوع سرویس `specialUse` باید در کنسول توضیح داده شود (در کافه‌بازار لازم نیست).
+Download the APK from the latest [GitHub Release](https://github.com/MobitSolidity/march/releases/latest). Android may require enabling **Install unknown apps** for March.

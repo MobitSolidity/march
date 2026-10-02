@@ -59,6 +59,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ir.bazaaryar.app.data.EVENTS
 import ir.bazaaryar.app.data.PriceHub
+import ir.bazaaryar.app.notify.ClockRing
 import ir.bazaaryar.app.notify.PriceAlerts
 import ir.bazaaryar.app.ui.AlertsScreen
 import ir.bazaaryar.app.ui.BazaaryarTheme
@@ -69,62 +70,54 @@ import ir.bazaaryar.app.ui.Lang
 import ir.bazaaryar.app.ui.MarketScreen
 import ir.bazaaryar.app.ui.NewsScreen
 import ir.bazaaryar.app.ui.ThemeMode
+import ir.bazaaryar.app.ui.UpdatePrompt
 import ir.bazaaryar.app.ui.WatchScreen
 import ir.bazaaryar.app.ui.faTime
 import ir.bazaaryar.app.ui.rememberNow
 import ir.bazaaryar.app.ui.resolveDark
 import ir.bazaaryar.app.ui.tr
+import ir.bazaaryar.app.update.Updater
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Android 15+ forces edge-to-edge for targetSdk >= 35: opt in everywhere so layout is identical on all versions.
-        // Bars are re-styled from Compose below as soon as the theme is known.
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
-        // Full-speed live data only while the app is visible; the background service keeps a lighter stream.
         lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) { PriceHub.acquire(applicationContext, ui = true) }
-            override fun onStop(owner: LifecycleOwner) { PriceHub.release(ui = true) }
+            override fun onStart(owner: LifecycleOwner) {
+                ClockRing.appVisible = true
+                PriceHub.acquire(applicationContext, ui = true)
+            }
+            override fun onStop(owner: LifecycleOwner) {
+                ClockRing.appVisible = false
+                PriceHub.release(ui = true)
+            }
         })
         if (savedInstanceState == null) openFromIntent(intent)
         setContent {
             val theme by vm.theme.collectAsStateWithLifecycle()
             val dark = theme.resolveDark()
-            // Header is always the deep colour (light icons); the navigation bar follows the theme.
             LaunchedEffect(dark) {
                 this@MainActivity.enableEdgeToEdge(
                     statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-                    navigationBarStyle = if (dark) {
-                        SystemBarStyle.dark(0xFF141A2E.toInt())
-                    } else {
-                        SystemBarStyle.light(0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt())
-                    },
+                    navigationBarStyle = if (dark) SystemBarStyle.dark(0xFF141A2E.toInt()) else SystemBarStyle.light(0xFFFFFFFF.toInt(), 0xFFFFFFFF.toInt()),
                 )
             }
             BazaaryarTheme(theme) {
-                // L.lang is snapshot state: switching FA/EN flips direction and every tr() text instantly.
                 CompositionLocalProvider(LocalLayoutDirection provides L.dir) {
                     AskNotificationPermission()
                     AppRoot(vm, theme)
+                    UpdatePrompt()
                 }
             }
         }
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        openFromIntent(intent)
-    }
-
-    /** Tapping a price alert opens that coin's sheet. */
-    private fun openFromIntent(i: Intent?) {
-        i?.getStringExtra(PriceAlerts.EXTRA_COIN)?.let { vm.select(it) }
-    }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); openFromIntent(intent) }
+    private fun openFromIntent(i: Intent?) { i?.getStringExtra(PriceAlerts.EXTRA_COIN)?.let { vm.select(it) } }
 }
 
-/** Asks once, and only if not already granted (no repeat prompt on every rotation). */
 @Composable
 private fun AskNotificationPermission() {
     if (Build.VERSION.SDK_INT < 33) return
@@ -132,43 +125,19 @@ private fun AskNotificationPermission() {
     var asked by rememberSaveable { mutableIntStateOf(0) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     LaunchedEffect(Unit) {
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        if (!granted && asked == 0) {
-            asked = 1
-            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (!granted && asked == 0) { asked = 1; launcher.launch(Manifest.permission.POST_NOTIFICATIONS) }
     }
 }
 
-private class Tab(private val fa: String, private val en: String, val icon: ImageVector) {
-    val label: String get() = tr(fa, en)
-}
-
+private class Tab(private val fa: String, private val en: String, val icon: ImageVector) { val label: String get() = tr(fa, en) }
 private val TABS = listOf(
-    Tab("اخبار", "News", Icons.Filled.Event),
-    Tab("بازار", "Market", Icons.Filled.BarChart),
-    Tab("واچ‌لیست", "Watchlist", Icons.Filled.Star),
-    Tab("هشدارها", "Alerts", Icons.Filled.NotificationsActive),
+    Tab("اخبار", "News", Icons.Filled.Event), Tab("بازار", "Market", Icons.Filled.BarChart),
+    Tab("واچ‌لیست", "Watchlist", Icons.Filled.Star), Tab("هشدارها", "Alerts", Icons.Filled.NotificationsActive),
 )
-
-private fun ThemeMode.next(): ThemeMode = when (this) {
-    ThemeMode.SYSTEM -> ThemeMode.LIGHT
-    ThemeMode.LIGHT -> ThemeMode.DARK
-    ThemeMode.DARK -> ThemeMode.SYSTEM
-}
-
-private fun ThemeMode.icon(): ImageVector = when (this) {
-    ThemeMode.SYSTEM -> Icons.Filled.BrightnessAuto
-    ThemeMode.LIGHT -> Icons.Filled.LightMode
-    ThemeMode.DARK -> Icons.Filled.DarkMode
-}
-
-private fun ThemeMode.label(): String = when (this) {
-    ThemeMode.SYSTEM -> tr("تم: خودکار", "Theme: system")
-    ThemeMode.LIGHT -> tr("تم: روشن", "Theme: light")
-    ThemeMode.DARK -> tr("تم: تیره", "Theme: dark")
-}
+private fun ThemeMode.next(): ThemeMode = when (this) { ThemeMode.SYSTEM -> ThemeMode.LIGHT; ThemeMode.LIGHT -> ThemeMode.DARK; ThemeMode.DARK -> ThemeMode.SYSTEM }
+private fun ThemeMode.icon(): ImageVector = when (this) { ThemeMode.SYSTEM -> Icons.Filled.BrightnessAuto; ThemeMode.LIGHT -> Icons.Filled.LightMode; ThemeMode.DARK -> Icons.Filled.DarkMode }
+private fun ThemeMode.label(): String = when (this) { ThemeMode.SYSTEM -> tr("تم: خودکار", "Theme: system"); ThemeMode.LIGHT -> tr("تم: روشن", "Theme: light"); ThemeMode.DARK -> tr("تم: تیره", "Theme: dark") }
 
 @Composable
 private fun AppRoot(vm: MainViewModel, theme: ThemeMode) {
@@ -183,87 +152,30 @@ private fun AppRoot(vm: MainViewModel, theme: ThemeMode) {
     val now = rememberNow()
     val rate = market.usdt?.toman
     val chip = RoundedCornerShape(50)
-
     Scaffold(
         containerColor = C.Paper,
         topBar = {
-            Row(
-                Modifier.fillMaxWidth().background(C.headerBrush).statusBarsPadding()
-                    .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    tr("بازاریار", "Bazaaryar"), color = C.OnDeep, fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
-                )
+            Row(Modifier.fillMaxWidth().background(C.headerBrush).statusBarsPadding().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(tr("March", "March"), color = C.OnDeep, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text(faTime(now), color = C.OnDeepMuted, fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
-                // Currency toggle: show every coin in USD or in Toman (via live USDT/IRT rate).
-                Text(
-                    if (toman) tr("تومان", "Toman") else tr("دلار", "USD"),
-                    color = C.Deep, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(end = 6.dp).clip(chip).background(C.OnDeepMuted)
-                        .clickable { vm.setToman(!toman) }.padding(horizontal = 12.dp, vertical = 4.dp),
-                )
-                // Language switch: shows the language you would switch TO.
-                Text(
-                    if (L.en) "فا" else "EN",
-                    color = C.OnDeep, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clip(chip).background(C.OnDeep.copy(alpha = 0.16f))
-                        .clickable { vm.setLang(if (L.en) Lang.FA else Lang.EN) }
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                )
-                // Theme switch: system -> light -> dark.
-                IconButton(onClick = { vm.setTheme(theme.next()) }) {
-                    Icon(theme.icon(), contentDescription = theme.label(), tint = C.OnDeep, modifier = Modifier.size(22.dp))
-                }
+                Text(if (toman) tr("تومان", "Toman") else tr("دلار", "USD"), color = C.Deep, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 6.dp).clip(chip).background(C.OnDeepMuted).clickable { vm.setToman(!toman) }.padding(horizontal = 12.dp, vertical = 4.dp))
+                Text(if (L.en) "فا" else "EN", color = C.OnDeep, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clip(chip).background(C.OnDeep.copy(alpha = 0.16f)).clickable { vm.setLang(if (L.en) Lang.FA else Lang.EN) }.padding(horizontal = 10.dp, vertical = 4.dp))
+                IconButton(onClick = { vm.setTheme(theme.next()) }) { Icon(theme.icon(), contentDescription = theme.label(), tint = C.OnDeep, modifier = Modifier.size(22.dp)) }
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = C.Card) {
-                TABS.forEachIndexed { i, t ->
-                    NavigationBarItem(
-                        selected = tab == i, onClick = { tab = i },
-                        icon = { Icon(t.icon, contentDescription = t.label) },
-                        label = { Text(t.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = C.Lead, selectedTextColor = C.Lead,
-                            unselectedIconColor = C.Muted, unselectedTextColor = C.Muted,
-                            indicatorColor = C.Soft,
-                        ),
-                    )
-                }
-            }
+            NavigationBar(containerColor = C.Card) { TABS.forEachIndexed { i, t -> NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Icon(t.icon, contentDescription = t.label) }, label = { Text(t.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = C.Lead, selectedTextColor = C.Lead, unselectedIconColor = C.Muted, unselectedTextColor = C.Muted, indicatorColor = C.Soft)) } }
         },
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad)) {
             when (tab) {
                 0 -> NewsScreen(EVENTS, now, alarms, vm::toggleAlarm)
                 1 -> MarketScreen(market, watch, toman, vm::toggleWatch, vm::refresh, vm::select)
-                2 -> WatchScreen(
-                    market.coins, watch, EVENTS, alarms, now, toman, rate,
-                    vm::toggleWatch, vm::toggleAlarm, vm::select,
-                ) { tab = it }
-                else -> {
-                    val s = settings
-                    if (s != null) AlertsScreen(s, rules, market.coins, vm::updateSettings, vm::removeRule, vm::select, vm::testAlert)
-                }
+                2 -> WatchScreen(market.coins, watch, EVENTS, alarms, now, toman, rate, vm::toggleWatch, vm::toggleAlarm, vm::select) { tab = it }
+                else -> settings?.let { AlertsScreen(it, rules, market.coins, vm::updateSettings, vm::removeRule, vm::select, vm::testAlert, vm::testAlarm) }
             }
         }
     }
-
     val coin = selected?.let { id -> market.coins.firstOrNull { it.id == id } }
-    if (coin != null) {
-        CoinSheet(
-            c = coin,
-            toman = toman,
-            rate = rate,
-            starred = coin.id in watch,
-            rule = rules[coin.id],
-            defaultPct = settings?.thresholdPct ?: 5f,
-            session = PriceHub.history.series(coin.id),
-            onToggleStar = { vm.toggleWatch(coin.id) },
-            onSaveRule = vm::saveRule,
-            onDismiss = { vm.select(null) },
-        )
-    }
+    if (coin != null) CoinSheet(c = coin, toman = toman, rate = rate, starred = coin.id in watch, rule = rules[coin.id], defaultPct = settings?.thresholdPct ?: 5f, session = PriceHub.history.series(coin.id), onToggleStar = { vm.toggleWatch(coin.id) }, onSaveRule = vm::saveRule, onDismiss = { vm.select(null) })
 }

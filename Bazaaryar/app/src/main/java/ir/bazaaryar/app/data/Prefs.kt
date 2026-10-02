@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
 
+// Store name kept as-is so existing users keep their settings after the rename to March.
 private val Context.store by preferencesDataStore("bazaaryar")
 private val WATCH = stringSetPreferencesKey("watch")
 private val ALARMS = stringSetPreferencesKey("alarms")
@@ -29,6 +30,7 @@ private val A_COOLDOWN = intPreferencesKey("alert_cooldown")
 private val A_BG = booleanPreferencesKey("alert_bg")
 private val A_USDT = booleanPreferencesKey("alert_usdt")
 private val A_RING = stringPreferencesKey("alert_ring")
+private val A_CLOCK = booleanPreferencesKey("alert_clock_app")
 private val NAME = stringPreferencesKey("user_name")
 private val RULES = stringPreferencesKey("coin_rules")
 private val THEME = stringPreferencesKey("theme")
@@ -36,7 +38,6 @@ private val LANG = stringPreferencesKey("lang")
 
 private val DEFAULT_WATCH = setOf("bitcoin", "ethereum", "solana", "ripple", USDT_IRT_ID)
 
-/** Appearance: theme mode and app language. */
 data class Look(val theme: ThemeMode = ThemeMode.SYSTEM, val lang: Lang = Lang.FA)
 
 private inline fun <reified T : Enum<T>> enumOr(name: String?, fallback: T): T =
@@ -53,6 +54,7 @@ private fun readSettings(p: Preferences) = AlertSettings(
     includeUsdt = p[A_USDT] ?: true,
     name = p[NAME] ?: "",
     ring = enumOr(p[A_RING], RingMode.ALL),
+    clockApp = p[A_CLOCK] ?: true,
 )
 
 private fun MutablePreferences.write(s: AlertSettings) {
@@ -66,6 +68,7 @@ private fun MutablePreferences.write(s: AlertSettings) {
     this[A_USDT] = s.includeUsdt
     this[NAME] = s.name
     this[A_RING] = s.ring.name
+    this[A_CLOCK] = s.clockApp
 }
 
 private fun JSONObject.optNum(k: String): Double? =
@@ -116,7 +119,6 @@ class Prefs(private val context: Context) {
         }
     }
 
-    /** Returns true if the alarm is now on. */
     suspend fun toggleAlarm(id: String): Boolean {
         var on = false
         context.store.edit {
@@ -127,46 +129,25 @@ class Prefs(private val context: Context) {
         return on
     }
 
-    suspend fun setToman(on: Boolean) {
-        context.store.edit { it[TOMAN] = on }
-    }
+    suspend fun setToman(on: Boolean) { context.store.edit { it[TOMAN] = on } }
+    suspend fun setTheme(mode: ThemeMode) { context.store.edit { it[THEME] = mode.name } }
+    suspend fun setLang(lang: Lang) { context.store.edit { it[LANG] = lang.name } }
+    suspend fun updateSettings(change: (AlertSettings) -> AlertSettings) { context.store.edit { p -> p.write(change(readSettings(p))) } }
 
-    suspend fun setTheme(mode: ThemeMode) {
-        context.store.edit { it[THEME] = mode.name }
-    }
-
-    suspend fun setLang(lang: Lang) {
-        context.store.edit { it[LANG] = lang.name }
-    }
-
-    suspend fun updateSettings(change: (AlertSettings) -> AlertSettings) {
-        context.store.edit { p -> p.write(change(readSettings(p))) }
-    }
-
-    /** Saves a per-coin rule; an empty rule removes it. */
     suspend fun setRule(rule: CoinRule) {
         context.store.edit { p ->
             val m = decodeRules(p[RULES]).toMutableMap()
-            if (rule.isEmpty) {
-                m.remove(rule.id)
-            } else {
-                m[rule.id] = rule
-            }
+            if (rule.isEmpty) m.remove(rule.id) else m[rule.id] = rule
             p[RULES] = encodeRules(m)
         }
     }
 
-    /** Target alerts are one-shot: drop the target once it has fired. */
     suspend fun clearTarget(id: String, above: Boolean) {
         context.store.edit { p ->
             val m = decodeRules(p[RULES]).toMutableMap()
             val r = m[id] ?: return@edit
             val next = if (above) r.copy(above = null) else r.copy(below = null)
-            if (next.isEmpty) {
-                m.remove(id)
-            } else {
-                m[id] = next
-            }
+            if (next.isEmpty) m.remove(id) else m[id] = next
             p[RULES] = encodeRules(m)
         }
     }
